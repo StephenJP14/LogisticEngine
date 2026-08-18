@@ -33,14 +33,43 @@ public static class VehiclesEndpoints
 {
     public static void MapVehiclesEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/vehicles")
-                       .RequireAuthorization(p => p.RequireRole("SystemAdmin", "Dispatcher"));
+        var group = app.MapGroup("/api/vehicles").RequireAuthorization(p => p.RequireRole("SystemAdmin", "Dispatcher"));
 
         // 1. GET /api/vehicles (Daftar Seluruh Armada)
-        group.MapGet("", async (AppDbContext db) =>
+        // 1. GET /api/vehicles dengan Search, Filter Status, & Pagination
+        group.MapGet("", async (
+            string? search,       // Filter Plat atau Model
+            bool? isActive,       // Filter Aktif/Nonaktif
+            int? page,            // Halaman (1-based)
+            int? pageSize,        // Ukuran per halaman (max 100)
+            AppDbContext db) =>
         {
-            var vehicles = await db.Vehicles
+            var currentPage = Math.Max(page ?? 1, 1);
+            var size = Math.Clamp(pageSize ?? 10, 1, 100);
+
+            var query = db.Vehicles.AsNoTracking();
+
+            // 1. Filter Status
+            if (isActive.HasValue)
+            {
+                query = query.Where(v => v.IsActive == isActive.Value);
+            }
+
+            // 2. Search Keyword
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim().ToUpperInvariant();
+                query = query.Where(v => EF.Functions.ILike(v.PlateNumber, $"%{term}%")
+                                    || EF.Functions.ILike(v.ModelType, $"%{term}%"));
+            }
+
+            var totalItems = await query.CountAsync();
+            var totalPages = (int)Math.Ceiling(totalItems / (double)size);
+
+            var vehicles = await query
                 .OrderBy(v => v.PlateNumber)
+                .Skip((currentPage - 1) * size)
+                .Take(size)
                 .Select(v => new
                 {
                     v.Id,
@@ -52,7 +81,16 @@ public static class VehiclesEndpoints
                 })
                 .ToListAsync();
 
-            return ApiResponse.Ok(vehicles, "Daftar armada kendaraan berhasil diambil.");
+            var response = new PagedResponse<object>
+            {
+                Status = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Daftar armada kendaraan berhasil diambil.",
+                Data = vehicles,
+                Meta = new PageMeta(currentPage, size, totalItems, totalPages)
+            };
+
+            return Results.Ok(response);
         });
 
         // 2. POST /api/vehicles (Daftarkan Kendaraan Baru)

@@ -3,6 +3,7 @@ using Logistics.Api.Common.Database;
 using Logistics.Api.Common.Entities;
 using Logistics.Api.Common.Models;
 using Microsoft.EntityFrameworkCore;
+using Logistics.Api.Common.Utils;
 using StackExchange.Redis;
 
 namespace Logistics.Api.Features.Fleet.GetLiveFleet;
@@ -118,35 +119,67 @@ public static class GetLiveFleetEndpoint
         // 4. Endpoint Baru: GET Route Playback History (Menggambar jejak rute di peta)
         app.MapGet("/api/fleet/{vehiclePlate}/history", async (
             string vehiclePlate,
+            long? cursor,          // ID terakhir yang diterima klien
+            int? limit,           // Default 50, max 200
             DateTime? fromUtc,
             DateTime? toUtc,
             AppDbContext db) =>
         {
-            var start = fromUtc ?? DateTime.UtcNow.AddHours(-24);
-            var end = toUtc ?? DateTime.UtcNow;
+            var normalizedPlate = VehicleNormalizer.NormalizePlate(vehiclePlate);
+            var pageSize = Math.Clamp(limit ?? 50, 1, 200);
 
-            var history = await db.VehicleTelemetryLogs
-                .Where(l => l.VehiclePlate == vehiclePlate && l.TimestampUtc >= start && l.TimestampUtc <= end)
-                .OrderBy(l => l.TimestampUtc)
-                .Select(l => new
+            // Bangun query dasar berbasis index (VehiclePlate + Timestamp/Id)
+            var query = db.VehicleTelemetryLogs
+                .AsNoTracking()
+                .Where(x => x.VehiclePlate == normalizedPlate);
+
+            // Filter rentang waktu jika diisi
+            if (fromUtc.HasValue)
+                query = query.Where(x => x.TimestampUtc >= fromUtc.Value);
+            if (toUtc.HasValue)
+                query = query.Where(x => x.TimestampUtc <= toUtc.Value);
+
+            // KEYSET / CURSOR PAGINATION LOGIC:
+            // Jika cursor ada, kita query data yang ID-nya lebih kecil (halaman berikutnya)
+            if (cursor.HasValue && cursor.Value > 0)
+            {
+                query = query.Where(x => x.Id < cursor.Value);
+            }
+
+            // Ambil pageSize + 1 untuk mengecek apakah masih ada data setelah batch ini
+            var records = await query
+                .OrderByDescending(x => x.Id)
+                .Take(pageSize + 1)
+                .Select(x => new
                 {
-                    latitude = l.Latitude,
-                    longitude = l.Longitude,
-                    speedKmh = l.SpeedKmh,
-                    heading = l.HeadingDegrees,
-                    isOnDuty = l.IsOnDuty,
-                    manifestNumber = l.ActiveManifestNumber,
-                    timestamp = l.TimestampUtc
+                    x.Id,
+                    x.VehiclePlate,
+                    x.Latitude,
+                    x.Longitude,
+                    x.SpeedKmh,
+                    x.HeadingDegrees,
+                    x.IsOnDuty,
+                    x.ActiveManifestNumber,
+                    x.HasAlert,
+                    x.AlertType,
+                    x.TimestampUtc
                 })
                 .ToListAsync();
 
-            return ApiResponse.Ok(new
+            var hasMore = records.Count > pageSize;
+            var resultData = hasMore ? records.Take(pageSize).ToList() : records;
+            long? nextCursor = hasMore && resultData.Count > 0 ? resultData[^1].Id : null;
+
+            var response = new CursorResponse<object>
             {
-                vehiclePlate = vehiclePlate,
-                timeRange = new { from = start, to = end },
-                totalPoints = history.Count,
-                routeCoordinates = history
-            });
+                Status = StatusCodes.Status200OK,
+                Success = true,
+                Message = $"Berhasil mengambil {resultData.Count} titik log telemetri.",
+                Data = resultData,
+                Cursor = new CursorMeta(nextCursor, hasMore)
+            };
+
+            return Results.Ok(response);
         });
     }
 }

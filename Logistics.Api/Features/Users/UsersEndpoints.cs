@@ -34,14 +34,47 @@ public static class UsersEndpoints
     public static void MapUsersEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/users")
-                       .RequireAuthorization(p => p.RequireRole("SystemAdmin"));
-
-        // 1. GET /api/users (Daftar Seluruh Karyawan)
-        group.MapGet("", async (AppDbContext db) =>
+                    .RequireAuthorization(p => p.RequireRole("SystemAdmin"));
+        
+        // 1. GET /api/users dengan Search, Filter Role, Status, & Pagination
+        group.MapGet("", async (
+            string? search,
+            UserRole? role,
+            bool? isActive,
+            int? page,
+            int? pageSize,
+            AppDbContext db) =>
         {
-            var users = await db.Users
+            var currentPage = Math.Max(page ?? 1, 1);
+            var size = Math.Clamp(pageSize ?? 10, 1, 100);
+
+            var query = db.Users.AsNoTracking();
+
+            if (role.HasValue)
+            {
+                query = query.Where(u => u.Role == role.Value);
+            }
+
+            if (isActive.HasValue)
+            {
+                query = query.Where(u => u.IsActive == isActive.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim();
+                query = query.Where(u => EF.Functions.ILike(u.Username, $"%{term}%")
+                                    || EF.Functions.ILike(u.FullName, $"%{term}%"));
+            }
+
+            var totalItems = await query.CountAsync();
+            var totalPages = (int)Math.Ceiling(totalItems / (double)size);
+
+            var users = await query
                 .OrderBy(u => u.Role)
                 .ThenBy(u => u.FullName)
+                .Skip((currentPage - 1) * size)
+                .Take(size)
                 .Select(u => new
                 {
                     u.Id,
@@ -54,7 +87,16 @@ public static class UsersEndpoints
                 })
                 .ToListAsync();
 
-            return ApiResponse.Ok(users, "Daftar user berhasil diambil.");
+            var response = new PagedResponse<object>
+            {
+                Status = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Daftar user berhasil diambil.",
+                Data = users,
+                Meta = new PageMeta(currentPage, size, totalItems, totalPages)
+            };
+
+            return Results.Ok(response);
         });
 
         // 2. POST /api/users (Daftarkan User Baru)
