@@ -28,6 +28,7 @@ using System.Text.Json;
 using Logistics.Api.Common.Models;
 using Logistics.Api.Features.Users;
 using Logistics.Api.Features.Vehicles;
+using Logistics.Api.Common.Filters;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -250,29 +251,41 @@ app.MapGet("/api/hubs", async (AppDbContext db) => await db.Hubs.ToListAsync()).
 // --- PROTECTED GROUPS ---
 
 // Group 1: Warehouse & Admin
-var warehouseGroup = app.MapGroup("").RequireAuthorization(p => p.RequireRole("WarehouseStaff", "SystemAdmin"));
+var warehouseGroup = app.MapGroup("")
+                                    .RequireAuthorization(p => p.RequireRole("WarehouseStaff", "SystemAdmin"))
+                                    .AddIdempotency();
 warehouseGroup.MapCreatePackage();
 warehouseGroup.MapLoadPackage();
 
 // Group 2: Dispatcher & Admin
-var dispatcherGroup = app.MapGroup("").RequireAuthorization(p => p.RequireRole("Dispatcher", "SystemAdmin"));
+var dispatcherGroup = app.MapGroup("")
+                                    .RequireAuthorization(p => p.RequireRole("Dispatcher", "SystemAdmin"))
+                                    .AddIdempotency();
 dispatcherGroup.MapCreateManifest();
 dispatcherGroup.MapGetLiveFleet();
 
 // Group 3: Dispatcher, StoreManager & Admin
-var completeManifestGroup = app.MapGroup("").RequireAuthorization(p => p.RequireRole("Dispatcher", "StoreManager", "SystemAdmin"));
+var completeManifestGroup = app.MapGroup("")
+                                    .RequireAuthorization(p => p.RequireRole("Dispatcher", "StoreManager", "SystemAdmin"))
+                                    .AddIdempotency();
 completeManifestGroup.MapCompleteManifest();
 
 // Group 4: Warehouse, Dispatcher, StoreManager & Admin
-var scanGroup = app.MapGroup("").RequireAuthorization(p => p.RequireRole("WarehouseStaff", "Dispatcher", "StoreManager", "SystemAdmin"));
+var scanGroup = app.MapGroup("")
+                            .RequireAuthorization(p => p.RequireRole("WarehouseStaff", "Dispatcher", "StoreManager", "SystemAdmin"))
+                            .AddIdempotency();
 scanGroup.MapScanMilestone();
 
 // Group 5: Driver, StoreManager & Admin
-var podGroup = app.MapGroup("").RequireAuthorization(p => p.RequireRole("Driver", "StoreManager", "SystemAdmin"));
+var podGroup = app.MapGroup("")
+                            .RequireAuthorization(p => p.RequireRole("Driver", "StoreManager", "SystemAdmin"))
+                            .AddIdempotency();
 podGroup.MapSubmitPod();
 
 // Group 6: Warehouse, Driver, StoreManager & Admin
-var damageGroup = app.MapGroup("").RequireAuthorization(p => p.RequireRole("WarehouseStaff", "Driver", "StoreManager", "SystemAdmin"));
+var damageGroup = app.MapGroup("")
+                            .RequireAuthorization(p => p.RequireRole("WarehouseStaff", "Driver", "StoreManager", "SystemAdmin"))
+                            .AddIdempotency();
 damageGroup.MapReportDamaged();
 
 // Group 7: Driver & Admin
@@ -286,6 +299,6 @@ adminGroup.MapVehiclesEndpoints();
 
 // SignalR Hub Map (Hanya Dispatcher dan Admin yang boleh memantau Live Peta)
 app.MapHub<FleetTrackingHub>("/hubs/fleet")
-   .RequireAuthorization(p => p.RequireRole("Dispatcher", "SystemAdmin"));
+    .RequireAuthorization(p => p.RequireRole("Dispatcher", "SystemAdmin"));
 
 app.Run();
