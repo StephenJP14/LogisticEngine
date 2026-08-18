@@ -1,0 +1,57 @@
+# ========================
+# macOS
+# ========================
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ========================
+# .NET / C#
+# ========================
+# Folder kompilasi (Sangat penting untuk diabaikan!)
+bin/
+obj/
+
+# File user spesifik
+*.user
+*.userosscache
+*.sln.docstates
+
+# Folder hasil publish (jika nanti kamu melakukan publish lokal)
+Publish/
+out/
+TestResults/
+
+# ========================
+# IDE & Editor
+# ========================
+# Visual Studio
+.vs/
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ========================
+# Logs & Cache
+# ========================
+*.log
+*.cache
+
+# ========================
+# Environment Variables
+# ========================
+.env
+*.env
+
+# ========================
+# Test Examples
+# ========================
+engine_tests/
