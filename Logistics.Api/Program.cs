@@ -262,7 +262,11 @@ var dispatcherGroup = app.MapGroup("")
                                     .RequireAuthorization(p => p.RequireRole("Dispatcher", "SystemAdmin"))
                                     .AddIdempotency();
 dispatcherGroup.MapCreateManifest();
-dispatcherGroup.MapGetLiveFleet();
+
+// Group 2B: GET MapGetLiveFleet (Tanpa Idempotency, karena GET tidak perlu idempotent)
+var liveFleetGroup = app.MapGroup("")
+                                    .RequireAuthorization(p => p.RequireRole("Dispatcher", "SystemAdmin"));
+liveFleetGroup.MapGetLiveFleet();
 
 // Group 3: Dispatcher, StoreManager & Admin
 var completeManifestGroup = app.MapGroup("")
